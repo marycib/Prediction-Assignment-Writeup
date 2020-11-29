@@ -1,0 +1,185 @@
+---
+title: "Practical Machine Learning Project"
+author: "Maribel"
+date: "27/11/2020"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset)
+
+
+
+
+
+
+About the Data Set
+
+This human activity recognition research has traditionally focused on discriminating between different activities, i.e. to predict "which" activity was performed at a specific point in time (like with the Daily Living Activities dataset above). The approach we propose for the Weight Lifting Exercises dataset is to investigate "how (well)" an activity was performed by the wearer. The "how (well)" investigation has only received little attention so far, even though it potentially provides useful information for a large variety of applications,such as sports training.
+
+
+```{r, message=FALSE}
+library(knitr)
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(rattle)
+library(e1071)
+library(randomForest)
+library(corrplot)
+library(gbm)
+library(RColorBrewer)
+
+
+
+Train <-  read.csv("pml-training.csv")
+Test  <- read.csv("pml-testing.csv")
+
+```
+
+
+Partioning the training set into two
+
+```{r,}
+set.seed(69420)
+inTrain  <- createDataPartition(Train$classe, p=0.7, list=FALSE)
+TrainD <- Train[inTrain, ]
+TestD  <- Train[-inTrain, ] 
+
+dim(TrainD)
+str(TrainD)
+
+```
+
+
+Remove NearZeroVariance variables and NA
+
+```{r}
+TrainD <- TrainD[, -c(1:7)]
+TestD <- TestD[, -c(1:7)]
+NZV <- nearZeroVar(TrainD)
+TrainD <- TrainD[, -NZV]
+TestD  <- TestD[, -NZV]
+allNA    <- sapply(TrainD, function(x) mean(is.na(x))) > 0.95
+TrainD <- TrainD[, allNA==FALSE]
+TestD  <-TestD[, allNA==FALSE]
+dim(TrainD)
+
+
+
+
+```
+
+After cleaning, the new training data set has only 53 columns.
+
+
+## Exploratoy Data Analysis
+
+
+we perform a correlation analysis to find out if multicollinearity is a problem
+
+
+```{r}
+col<- colorRampPalette(c("red", "white", "blue"))(20)
+
+
+corMatrix <- cor(TrainD[, -53])
+corrplot(corMatrix, order = "hclust", method = "circle", type = "upper", tl.cex = 0.5,tl.col="black",col = col ,mar = c(1, 1, 1, 1), title = "Training Dataset Correlogram")
+
+
+```
+
+
+
+
+
+The different tones show the correlation blue closer to 1, red closer to -1
+
+
+
+
+
+## Building the Predictive Model
+
+
+```{r, cache = T}
+
+
+
+controlRF <- trainControl(method="cv", number=3, verboseIter=FALSE)
+modFitRF01 <- train(classe ~ ., data=TrainD, method="rf", trControl=controlRF)
+modFitRF01
+```
+
+
+
+```{r}
+predictRF <- predict(modFitRF01, newdata=TestD)
+confMatRF <- confusionMatrix(table(predictRF, TestD$classe))
+confMatRF
+
+plot(confMatRF$table, col = confMatRF$byClass, main = paste("Random Forest - Accuracy =", round(confMatRF$overall['Accuracy'], 4)))
+
+```
+
+
+
+
+
+
+### Prediction with Decision Trees
+I use 3 types of models in this section
+
+### Decision tree 
+
+
+```{r}
+modFitDT025 <- rpart(classe ~ ., data=TrainD, method="class")
+fancyRpartPlot(modFitDT025,palettes="RdPu")
+
+```
+
+
+## Random Forest
+
+```{r}
+
+
+
+
+predictDT025 <- predict(modFitDT025, newdata=TestD, type="class")
+confMat_Tree <- confusionMatrix(table(predictDT025, TestD$classe))
+confMat_Tree
+plot(confMat_Tree$table, col = confMat_Tree$byClass, main = paste("Decision Tree - Accuracy =", round(confMat_Tree$overall['Accuracy'], 4)))
+```
+
+
+
+
+
+
+```{r}
+cont_GBM <- trainControl(method = "repeatedcv", number = 5, repeats = 1)
+modF_GBM  <- train(classe ~ ., data=TrainD, method = "gbm", trControl = cont_GBM, verbose = FALSE)
+modF_GBM$finalModel
+pred_GBM <- predict(modF_GBM, newdata=TestD)
+conf_GBM <- confusionMatrix(table(pred_GBM, TestD$classe))
+conf_GBM
+plot(conf_GBM$table, col = conf_GBM$byClass, 
+     main = paste("GBM - Accuracy =", round(conf_GBM$overall['Accuracy'], 4)))
+
+```
+
+
+
+Random Forests gave an Accuracy in the Test dataset of 99.29, which was more accurate that what I got from the Decision Trees or GBM
+
